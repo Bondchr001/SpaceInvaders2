@@ -1,5 +1,3 @@
-from operator import truediv
-
 import pygame, random
 
 # Initialize pygame
@@ -50,20 +48,21 @@ class Game():
 
     def draw(self):
         """Draw the HUD and other information to display"""
+        WHITE = (255, 255, 255)
         # Set text
 
-        score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
+        score_text = self.font.render(f"Score: {self.score}", True, WHITE)
         score_rect = score_text.get_rect()
         score_rect.centerx = WINDOW_WIDTH//2
         score_rect.top = 10
 
-        round_text = self.font.render(f"Round {self.round_number}", True, (255, 255, 255))
+        round_text = self.font.render(f"Round {self.round_number}", True, WHITE)
         round_rect = round_text.get_rect()
         round_rect.topleft = (20,10)
 
-        lives_text = self.font.render(f"Lives: {self.alien_bullet_group.lives}", True, (255, 255, 255))
+        lives_text = self.font.render(f"Lives: {self.player.lives}", True, WHITE)
         lives_rect = lives_text.get_rect()
-        lives_rect.topleft = (20,10)
+        lives_rect.topright = (WINDOW_WIDTH - 20, 10)
 
         # Blit the HUD to the display
         display_surface.blit(lives_text, lives_rect)
@@ -74,7 +73,30 @@ class Game():
 
     def shift_aliens(self):
         """Shift a wave of aliens down the screen and reverse direction"""
-        pass
+        shift = False
+        for alien in (self.alien_group.sprites()):
+            if alien.rect.left <= 0 or alien.rect.right >= WINDOW_WIDTH:
+                shift = True
+
+        if shift:
+            breach = False
+            for alien in (self.alien_group.sprites()):
+                # Shift down
+                alien.rect.y += 10 * self.round_number
+
+                # Reverse the direction and move the alien off the edge so 'shift' doesn't trigger
+                alien.direction *= -1
+                alien.rect.x += alien.direction * alien.velocity
+
+                # Check if an alien reached the ship
+                if alien.rect.bottom >= WINDOW_HEIGHT - 100:
+                    breach = True
+
+            # Aliens breached the line
+            if breach:
+                self.breach_sound.play()
+                self.player.lives -= 1
+                self.check_game_status("Aliens breach the line", "Press 'Enter' to continue")
 
     def check_collisions(self):
         """Check for collisions"""
@@ -94,7 +116,7 @@ class Game():
     def check_round_completion(self):
         """Check to see if a player has completed a single round"""
         if not (self.alien_group):
-            self.score += 1000 * self.round_number1
+            self.score += 1000 * self.round_number
             self.round_number += 1
             self.start_new_round()
 
@@ -103,10 +125,12 @@ class Game():
         # Create a grid of Aliens 11 columns and 5 rows.
         for col in range(11):
             for row in range(5):
-                Alien(64 + col * 64, 64 + col * 64, self.round_number, self.alien_bullet_group)
+                alien = Alien(64 + col * 64, 64 + row * 64, self.round_number, self.alien_bullet_group)
+                self.alien_group.add(alien)
         # Pause the game and prompt user to start
         self.new_round_sound.play()
         self.pause_game(f"Space Invaders Round {self.round_number}", "Press 'Enter' to begin")
+
     def check_game_status(self, main_text, sub_text):
         """Check to see the status of the game and how the player died"""
         self.alien_bullet_group.empty()
@@ -114,6 +138,11 @@ class Game():
         self.player.reset()
         for alien in self.alien_group:
             alien.reset()
+
+        if self.player.lives == 0:
+            self.reset_game()
+        else:
+            self.pause_game(main_text, sub_text)
 
     def pause_game(self, main_text, sub_text):
         """Pauses the game"""
@@ -153,39 +182,6 @@ class Game():
                 if event.type == pygame.QUIT:
                     is_paused = False
                     running = False
-        """Pauses the game"""
-        global running
-
-        # Set Colors
-        WHITE = (255, 255, 255)
-        BLACK = (0, 0, 0)
-
-        # Create main pause text
-        main_text = self.font.render(main_text, True, WHITE)
-        main_rect = main_text.get_rect()
-        main_rect.center = (WINDOW_WIDTH//2, WINDOW_HEIGHT//2 )
-        # Create sub pause text
-        sub_text = self.font.render(sub_text, True, WHITE)
-        sub_rect = sub_text.get_rect()
-        sub_rect.center = (WINDOW_WIDTH//2, WINDOW_HEIGHT//2 + 64)
-
-        # Blit the pause text
-        display_surface.fill(BLACK)
-        display_surface.blit(main_text, main_rect)
-        display_surface.blits(sub_text, sub_rect)
-        pygame.display.update()
-
-        # Pause the game until the user hits enter
-        is_paused = True
-        while is_paused:
-            for event in pygame.event.get():
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_RETURN:
-                        is_paused = False
-                if event.type == pygame.QUIT:
-                    is_paused = False
-                    running = False
-
 
 
 def reset_game(self):
@@ -214,7 +210,7 @@ class Player(pygame.sprite.Sprite):
     def __init__(self, bullet_group):
         """Initialize the player"""
         super().__init__()
-        self.image = pygame.image.load('player.png')
+        self.image = pygame.image.load('player_ship.png')
         self.rect = self.image.get_rect()
         self.rect.centerx = WINDOW_WIDTH//2
         self.rect.bottom = WINDOW_HEIGHT
@@ -253,9 +249,9 @@ class Alien(pygame.sprite.Sprite):
     def __init__(self, x, y, velocity, bullet_group):
         """Initialize the alien"""
         super().__init__()
-        self.image = pygame.image.load('alien.png')
+        self.image = pygame.image.load("alien.png")
         self.rect = self.image.get_rect()
-        self.image.topleft = (x, y)
+        self.rect.topleft = (x, y)
 
         self.starting_x = x
         self.starting_y = y
@@ -271,11 +267,12 @@ class Alien(pygame.sprite.Sprite):
         self.rect.x += self.direction * self.velocity
 
         # Randomly fire a bullet
-        if random.randint(0, 1000) > 999 and len(self.bullet_group) > 3:
+        if random.randint(0, 1000) > 999 and len(self.bullet_group) < 3:
             self.shoot_sound.play()
             self.fire()
 
     def fire(self):
+        """Fire a bullet"""
         AlienBullet(self.rect.centerx, self.rect.bottom, self.bullet_group)
 
     def reset(self):
@@ -310,7 +307,7 @@ class AlienBullet(pygame.sprite.Sprite):
         """Initialize the bullet"""
         super().__init__()
         self.image = pygame.image.load('red_laser.png')
-        self.image = self.image.get_rect()
+        self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.centery = y
 
@@ -354,7 +351,7 @@ while running:
                 my_player.fire()
 
     #Fill the display
-    display_surface.fill(0, 0, 0)
+    display_surface.fill((0, 0, 0))
 
     #Update and display all sprite groups
     my_player_group.update()
